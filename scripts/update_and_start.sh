@@ -3,55 +3,45 @@
 # --- 1. Smart Update Section ---
 echo "Checking for Hytale updates..."
 
-# Download the update
 if hytale-downloader -download-path /hytale/data/update.zip; then
     if [ -f "/hytale/data/update.zip" ]; then
-        echo "Update found! Applying Smart Patch..."
+        echo "Update found! Extracting..."
         
-        # EXCLUDE sensitive files from being overwritten (Config, Auth, Permissions)
-        # We unzip everything EXCEPT (-x) the config files that might contain your auth token.
+        # CRITICAL FIX: 
+        # -o: Overwrite game files (so you get the latest version)
+        # -x: EXCLUDE config files (so your Auth Token is NEVER deleted)
         unzip -o /hytale/data/update.zip -d /hytale/data/ -x "configs.json" "permissions.json" "server.properties"
         
-        # Clean up
         rm /hytale/data/update.zip
     fi
 else
     echo "No update found or check skipped."
 fi
 
-# Create logs directory if it doesn't exist
+# Create logs directory
 mkdir -p logs
 touch logs/hytale.log
 
-# --- 2. Advanced Startup (Watchdog + Input Support) ---
+# --- 2. Start Watchdog (Background) ---
+# It watches the log file. If it sees a crash, it kills the container (PID 1).
+echo "Starting Watchdog..."
+( tail -f -n0 logs/hytale.log | grep -q -E "java.lang.NullPointerException|Exception in thread" && echo "WATCHDOG: Crash detected! Killing server..." && kill 1 ) &
+
+# --- 3. Start Server (Foreground) ---
 if [ -f "Server/HytaleServer.jar" ]; then
     echo "Starting Hytale Server..."
     
-    # Run the server directly in the foreground, but use 'tee' to split the logs
-    # pipe: process substitution allows us to view logs AND run the watchdog
-    
-    # We trap the PID of the java process to allow the watchdog to kill it
-    (
-        java -Xmx${RAM_MAX} -Xms${RAM_MIN} \
-             -XX:AOTCache=Server/HytaleServer.aot \
-             -jar Server/HytaleServer.jar \
-             --assets Assets.zip \
-             --bind 0.0.0.0:5520
-    ) & 
-    SERVER_PID=$!
+    # MAGIC TRICK:
+    # We use 'exec' to replace the shell with Java (keeping your keyboard connected).
+    # We use '> >(tee ...)' to send logs to the file for the watchdog WITHOUT breaking the console.
+    exec java -Xmx${RAM_MAX} -Xms${RAM_MIN} \
+         -XX:AOTCache=Server/HytaleServer.aot \
+         -jar Server/HytaleServer.jar \
+         --assets Assets.zip \
+         --bind 0.0.0.0:5520 \
+         > >(tee -a logs/hytale.log) 2>&1
 
-    # Watchdog Logic: Monitors the log file for crash signatures
-    # If found, it kills the server process, causing the container to exit (and Docker to restart it)
-    ( tail -f -n0 logs/hytale.log | grep -q -E "java.lang.NullPointerException|Exception in thread" && echo "WATCHDOG: Crash detected! Killing server..." && kill -9 $SERVER_PID ) &
-    WATCHDOG_PID=$!
-
-    # Wait for the server to exit naturally
-    wait $SERVER_PID
-    
-    # Cleanup watchdog
-    kill $WATCHDOG_PID
-    
 else
-    echo "ERROR: HytaleServer.jar not found. The download may have failed."
+    echo "ERROR: HytaleServer.jar not found."
     sleep 300
 fi
