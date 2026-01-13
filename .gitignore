@@ -1,5 +1,6 @@
 data/
 hytale/
+logs/
 
 .DS_Store
 Thumbs.db

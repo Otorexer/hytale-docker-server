@@ -1,3 +1,5 @@
 data/
 hytale/
 .git
+.ds_store
+thumbs.db
