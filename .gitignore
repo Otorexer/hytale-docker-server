@@ -1,0 +1,7 @@
+data/
+hytale/
+
+.DS_Store
+Thumbs.db
+
+repomix-output.md

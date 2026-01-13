@@ -1,0 +1,14 @@
+services:
+  hytale-server:
+    build: .
+    container_name: hytale-main
+    restart: unless-stopped
+    ports:
+      - "5520:5520/udp"
+    environment:
+      - RAM_MAX=4G
+      - RAM_MIN=2G
+    volumes:
+      - ./data:/hytale/data
+    stdin_open: true
+    tty: true
