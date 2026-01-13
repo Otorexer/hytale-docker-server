@@ -1,42 +1,46 @@
 #!/bin/bash
 
-# --- 1. Definir archivos importantes ---
-# Estos son los archivos que NO queremos perder (Auth, Admins, etc.)
-CONFIG_FILE="Server/configs.json"
-PERM_FILE="Server/permissions.json"
+# --- 1. Definir archivos importantes (LISTA DE PROTECCIÓN) ---
+# Estos son los archivos que NO queremos perder nunca.
+# Protegemos tanto rutas en la raíz como dentro de Server/ por seguridad.
+FILES_TO_SAVE=(
+    "Server/configs.json"
+    "Server/permissions.json"
+    "Server/auth.enc"
+    "configs.json"
+    "permissions.json"
+    "auth.enc"
+)
 
 echo "Checking for Hytale updates..."
 
 if hytale-downloader -download-path /hytale/data/update.zip; then
     if [ -f "/hytale/data/update.zip" ]; then
-        echo "Update found!"
+        echo "Update found! Starting Smart Update process..."
         
-        # PASO 1: COPIA DE SEGURIDAD (Backup)
-        # Si ya tienes configuración, la guardamos en /tmp para que el zip no la borre
-        if [ -f "$CONFIG_FILE" ]; then
-            echo "Backing up configuration..."
-            cp "$CONFIG_FILE" /tmp/configs.json.bak
-        fi
-        if [ -f "$PERM_FILE" ]; then
-            cp "$PERM_FILE" /tmp/permissions.json.bak
-        fi
+        # PASO A: COPIA DE SEGURIDAD (Backup)
+        echo "Backing up sensitive files..."
+        mkdir -p /tmp/hytale_backup
+        for file in "${FILES_TO_SAVE[@]}"; do
+            if [ -f "$file" ]; then
+                # Guardamos el archivo manteniendo su estructura de carpetas
+                cp --parents "$file" /tmp/hytale_backup/
+                echo "Saved: $file"
+            fi
+        done
 
-        # PASO 2: ACTUALIZAR (Sobrescribir todo)
-        # Usamos -o (Overwrite) para asegurar que el juego esté limpio y actualizado
-        echo "Extracting update..."
+        # PASO B: ACTUALIZAR (Sobrescribir todo con la nueva versión)
+        echo "Extracting game files..."
         unzip -o /hytale/data/update.zip -d /hytale/data/
         
-        # PASO 3: RESTAURAR (Restore)
-        # Volvemos a poner tu configuración encima de la que traía el zip
-        if [ -f "/tmp/configs.json.bak" ]; then
-            echo "Restoring configuration (Auth preserved)..."
-            cp /tmp/configs.json.bak "$CONFIG_FILE"
-        fi
-        if [ -f "/tmp/permissions.json.bak" ]; then
-            cp /tmp/permissions.json.bak "$PERM_FILE"
+        # PASO C: RESTAURAR (Restore)
+        echo "Restoring sensitive files..."
+        if [ -d "/tmp/hytale_backup" ]; then
+            cp -r /tmp/hytale_backup/* .
+            rm -rf /tmp/hytale_backup
         fi
         
-        # Limpieza
+        # Limpieza del zip
         rm /hytale/data/update.zip
     fi
 else
@@ -48,15 +52,14 @@ mkdir -p logs
 touch logs/hytale.log
 
 # --- Watchdog (Vigilante) ---
-# Vigila si hay errores graves y reinicia el contenedor si el servidor muere
 echo "Starting Watchdog..."
 ( tail -f -n0 logs/hytale.log | grep -q -E "java.lang.NullPointerException|Exception in thread" && echo "WATCHDOG: Crash detected! Killing server..." && kill 1 ) &
 
-# --- Iniciar Servidor (Con soporte para comandos) ---
+# --- Iniciar Servidor (Foreground + Pipe) ---
 if [ -f "Server/HytaleServer.jar" ]; then
     echo "Starting Hytale Server..."
     
-    # Usamos 'exec' y 'tee' para que puedas escribir comandos Y el watchdog pueda leer los logs
+    # Arrancamos Java conectando la consola (exec) y guardando logs (tee)
     exec java -Xmx${RAM_MAX} -Xms${RAM_MIN} \
          -XX:AOTCache=Server/HytaleServer.aot \
          -jar Server/HytaleServer.jar \
