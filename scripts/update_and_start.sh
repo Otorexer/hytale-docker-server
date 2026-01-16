@@ -14,7 +14,7 @@ FILES_TO_SAVE=(
 
 echo "Checking for Hytale updates..."
 
-if hytale-downloader -download-path /hytale/data/update.zip; then
+if hytale-downloader -patchline pre-release -download-path /hytale/data/update.zip; then
     if [ -f "/hytale/data/update.zip" ]; then
         echo "Update found! Starting Smart Update process..."
         
