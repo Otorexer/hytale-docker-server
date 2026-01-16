@@ -35,7 +35,6 @@ services:
     stdin_open: true
     tty: true
 ```
-````
 
 2. Start the server:
 
